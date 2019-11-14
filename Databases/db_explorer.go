@@ -14,7 +14,7 @@ import (
 func sendError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	fmt.Fprintf(w, "{ \"error\": %s }", msg)
+	fmt.Fprintf(w, `{"error":"%s"}`, msg)
 }
 
 func sendAnswer(w http.ResponseWriter, content map[string]interface{}) {
@@ -41,7 +41,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		path = path[1:]
 	}
 
-	url := strings.Split("/", r.URL.Path)
+	url := strings.Split(path, "/")
 	table := url[0]
 	if table == "" {
 		tables := h.Agent.GetTables()
@@ -89,7 +89,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case http.MethodGet:
 			doc, e := h.Agent.GetRow(table, id)
 			if e != nil {
-				sendError(w, e.Error(), http.StatusInternalServerError)
+				sendError(w, "record not found", http.StatusNotFound)
 				break
 			}
 
