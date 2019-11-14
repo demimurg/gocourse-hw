@@ -5,6 +5,7 @@
 *.exe
 bin
 pkg
+playground
 solution_test.go
 solution.go
 solution*
