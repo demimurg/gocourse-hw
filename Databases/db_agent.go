@@ -150,19 +150,33 @@ func (db *DbAgent) GetRows(
 		columns = db.Schema[table]
 	)
 	for rows.Next() {
-		doc := make(map[string]interface{}, len(columns))
-		row := make([]interface{}, len(columns))
-		for i, col := range columns {
-			doc[col.Name] = reflect.New(col.Type)
-			row[i] = doc[col.Name]
+		vals := make([]interface{}, len(columns))
+		valPtrs := make([]interface{}, len(columns))
+		for i := range columns {
+			valPtrs[i] = &vals[i]
 		}
 
-		err = rows.Scan(row...)
+		err = rows.Scan(valPtrs...)
 		if err != nil {
 			return nil, err
 		}
 
-		// here will be pointers, it can be problem for Marshalling
+		var (
+			doc = make(map[string]interface{}, len(columns))
+			val interface{}
+		)
+		for i := range vals {
+			switch v := vals[i].(type) {
+			case []byte:
+				val = string(v)
+			case int64:
+				val = v
+			default:
+				val = nil
+			}
+
+			doc[columns[i].Name] = val
+		}
 		result = append(result, doc)
 	}
 
@@ -178,19 +192,37 @@ func (db *DbAgent) GetRow(table, id string) (
 			" WHERE id = ?", id,
 	)
 
-	columns := db.Schema[table]
-	doc := make(map[string]interface{}, len(columns))
-	vect := make([]interface{}, len(columns))
-	for i, col := range columns {
-		doc[col.Name] = reflect.New(col.Type)
-		vect[i] = doc[col.Name]
+	var (
+		columns = db.Schema[table]
+		vals    = make([]interface{}, len(columns))
+		valPtrs = make([]interface{}, len(columns))
+	)
+	for i := range columns {
+		valPtrs[i] = &vals[i]
 	}
-	err := row.Scan(vect...)
+	err := row.Scan(valPtrs...)
 	if err != nil {
 		return nil, err
 	}
 
-	// pointers in doc!
+	var (
+		doc = make(map[string]interface{}, len(columns))
+		val interface{}
+	)
+
+	for i := range vals {
+		switch v := vals[i].(type) {
+		case []byte:
+			val = string(v)
+		case int64:
+			val = v
+		default:
+			val = nil
+		}
+
+		doc[columns[i].Name] = val
+	}
+
 	return doc, nil
 }
 
