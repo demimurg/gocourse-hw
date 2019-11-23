@@ -543,7 +543,8 @@ func runCases(t *testing.T, ts *httptest.Server, db *sql.DB, cases []Case) {
 		}
 
 		if resp.StatusCode != item.Status {
-			t.Fatalf("[%s] expected http status %v, got %v", caseName, item.Status, resp.StatusCode)
+			t.Fatalf("[%s] expected http status %v, got %v. \n%s",
+				caseName, item.Status, resp.StatusCode, string(body))
 			continue
 		}
 

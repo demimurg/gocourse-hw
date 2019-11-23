@@ -3,20 +3,19 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
 )
 
-// Column have meta of DB column
+// Column has meta of DB column
 type Column struct {
 	Name     string
 	Type     reflect.Type
 	Nullable bool
 }
 
-// Table represent db-table
+// Table represents db-table
 type Table []Column
 
 // DbSchema describes database structure for app
@@ -29,18 +28,18 @@ type DbAgent struct {
 }
 
 type validationErr struct {
-	Value, Column, Type string
+	Field string
 }
 
 func (e validationErr) Error() string {
 	// should be "field <f> have invalid type"
 	return fmt.Sprintf(
-		"<%s> wrong value for <%s> column, must be %s",
-		e.Value, e.Column, e.Type,
+		"field %s have invalid type",
+		e.Field,
 	)
 }
 
-// ReadDbSchema save tables/columns meta to the receiver
+// ReadDbSchema saves tables/columns meta to the receiver
 // DbAgent Initialization
 func (db *DbAgent) ReadDbSchema() error {
 	schema := DbSchema{}
@@ -82,39 +81,86 @@ func (db *DbAgent) ReadDbSchema() error {
 	return nil
 }
 
-// ValidForm returns valid map with data from url.Values
-// Uses columns meta to parse data
-func (db *DbAgent) ValidForm(
-	table string,
-	vals url.Values,
-) (map[string]string, error) {
-	// Создание новой мапки добавлят нагрузку. Стоит ли?
-	columns, _ := db.Schema[table]
-
-	form := make(map[string]string, len(vals))
-	for _, col := range columns {
-		v := vals.Get(col.Name)
-		if v == "" && !col.Nullable {
-			return nil, validationErr{v, col.Name, "not null"}
-		}
-
-		switch col.Type.Name() {
-		case "int":
-			if _, e := strconv.Atoi(v); e != nil {
-				return nil, validationErr{v, col.Name, "int"}
-			}
-		case "float64":
-			if _, e := strconv.ParseFloat(v, 64); e != nil {
-				return nil, validationErr{v, col.Name, "float64"}
-			}
-		}
-
-		form[col.Name] = v
+// Validate ...
+func (db *DbAgent) Validate(
+	table, method string, data map[string]interface{},
+) error {
+	// waiting for refactor...
+	// !!!HARDCODE!!!
+	prKey := GetPrimaryKey(db.Schema, table)
+	_, havePrimaryKey := data[prKey]
+	if havePrimaryKey && method == "UPDATE" {
+		return validationErr{prKey}
 	}
-	return form, nil
+	// !!!HARDCODE!!!
+
+	for _, col := range db.Schema[table][1:] {
+		_, inReq := data[col.Name]
+		if !inReq && method == "UPDATE" {
+			continue
+		}
+
+		if !inReq && !col.Nullable {
+			switch col.Type.Name() {
+			case "int32":
+				data[col.Name] = 0
+			case "RawBytes":
+				data[col.Name] = ""
+			}
+		}
+
+		var (
+			val       = data[col.Name]
+			nullValue = col.Nullable && val == nil
+			err       error
+		)
+		switch col.Type.Name() {
+		case "int32":
+			if _, ok := val.(int); !nullValue && !ok {
+				err = validationErr{col.Name}
+			}
+		case "RawBytes":
+			if _, ok := val.(string); !nullValue && !ok {
+				err = validationErr{col.Name}
+			}
+		default:
+			err = validationErr{col.Name}
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	for k := range data {
+		var inSchema bool
+		for _, col := range db.Schema[table][1:] {
+			if k == col.Name {
+				inSchema = true
+				break
+			}
+		}
+
+		if !inSchema {
+			delete(data, k)
+		}
+	}
+
+	return nil
 }
 
-// GetTables return tables name list
+func GetPrimaryKey(schema DbSchema, table string) string {
+	var key string
+	for _, column := range schema[table] {
+		if strings.HasSuffix(column.Name, "id") {
+			key = column.Name
+			break
+		}
+	}
+	return key
+}
+
+// GetTables returns tables name list
 func (db *DbAgent) GetTables() []string {
 	var tables []string
 	for tb := range db.Schema {
@@ -183,14 +229,15 @@ func (db *DbAgent) GetRows(
 	return result, nil
 }
 
-// GetRow return row <id> from table
+// GetRow returns row <id> from table
 func (db *DbAgent) GetRow(table, id string) (
 	map[string]interface{}, error,
 ) {
-	row := db.QueryRow(
-		"SELECT * FROM "+table+
-			" WHERE id = ?", id,
+	q := fmt.Sprintf(
+		"SELECT * FROM %s WHERE %s = ?",
+		table, GetPrimaryKey(db.Schema, table),
 	)
+	row := db.QueryRow(q, id)
 
 	var (
 		columns = db.Schema[table]
@@ -227,53 +274,76 @@ func (db *DbAgent) GetRow(table, id string) (
 }
 
 // NewRow adds entity to existing table
-func (db *DbAgent) NewRow(table string, vals url.Values) (int64, error) {
-	// обрабатывать неверную таблицу (по уму)
-	form, err := db.ValidForm(table, vals)
+func (db *DbAgent) NewRow(
+	table string, data map[string]interface{},
+) (string, int64, error) {
+	err := db.Validate(table, "CREATE", data)
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
 
-	fields := make([]string, len(form))
-	values := make([]string, len(form))
-	for k, v := range form {
-		fields = append(fields, k)
-		values = append(values, v)
-	}
-
-	res, err := db.Exec(
-		"INSERT INTO "+table+" (?) VALUES (?)",
-		strings.Join(fields, ", "),
-		strings.Join(values, ", "),
+	var (
+		columns = make([]string, len(data))
+		values  = make([]interface{}, len(data))
+		i       int
 	)
+	for k, v := range data {
+		columns[i] = k
+		values[i] = fmt.Sprintf("%v", v)
+		i++
+	}
+
+	queryDraft := fmt.Sprintf(
+		"INSERT INTO %s (%s) VALUES (%s)",
+		table, strings.Join(columns, ", "),
+		"?"+strings.Repeat(", ?", len(columns)-1), // variadic num of placeholders
+	)
+
+	res, err := db.Exec(queryDraft, values...)
+	if err != nil {
+		fmt.Println(err)
+		return "", 0, err
+	}
 
 	insertID, err := res.LastInsertId()
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
 
-	return insertID, nil
+	return GetPrimaryKey(db.Schema, table), insertID, nil
 }
 
 // UpdateRow ...
 func (db *DbAgent) UpdateRow(
-	table, id string, vals url.Values,
+	table, id string, data map[string]interface{},
 ) (int64, error) {
-	form, err := db.ValidForm(table, vals)
+	err := db.Validate(table, "UPDATE", data)
 	if err != nil {
 		return 0, err
 	}
 
-	var subcmd string
-	for k, v := range form {
-		subcmd += fmt.Sprintf("%s='%s', ", k, v)
-	}
-	subcmd = subcmd[:len(subcmd)-2]
-
-	res, err := db.Exec(
-		"UPDATE "+table+" SET ? WHERE id = ?",
-		subcmd, id,
+	var (
+		valsWithID = make([]interface{}, len(data)+1)
+		pairs      string
+		i          int
 	)
+	for k, v := range data {
+		pairs += fmt.Sprintf("%s = ?, ", k)
+		valsWithID[i] = v
+		i++
+	}
+	valsWithID[i] = id
+	pairs = strings.TrimRight(pairs, ", ")
+
+	query := fmt.Sprintf(
+		"UPDATE %s SET %s WHERE %s = ?",
+		table, pairs,
+		GetPrimaryKey(db.Schema, table),
+	)
+	res, err := db.Exec(query, valsWithID...)
+	if err != nil {
+		return 0, err
+	}
 
 	updateID, err := res.RowsAffected()
 	if err != nil {
@@ -285,7 +355,11 @@ func (db *DbAgent) UpdateRow(
 
 // DeleteRow ...
 func (db *DbAgent) DeleteRow(table, id string) (int64, error) {
-	res, err := db.Exec("DELETE FROM "+table+" WHERE id = ?", id)
+	q := fmt.Sprintf(
+		"DELETE FROM %s WHERE %s = ?",
+		table, GetPrimaryKey(db.Schema, table),
+	)
+	res, err := db.Exec(q, id)
 	if err != nil {
 		return 0, err
 	}

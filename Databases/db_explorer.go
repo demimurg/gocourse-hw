@@ -3,18 +3,19 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"sort"
 	"strings"
-
-	_ "github.com/go-sql-driver/mysql"
 )
 
-func sendError(w http.ResponseWriter, msg string, code int) {
+func sendError(w http.ResponseWriter, err error, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	fmt.Fprintf(w, `{"error":"%s"}`, msg)
+	fmt.Fprintf(w, `{"error":"%s"}`, err)
 }
 
 func sendAnswer(w http.ResponseWriter, content map[string]interface{}) {
@@ -29,6 +30,22 @@ func sendAnswer(w http.ResponseWriter, content map[string]interface{}) {
 	w.Write(body)
 }
 
+func parseBody(reqBody io.ReadCloser) (map[string]interface{}, error) {
+	defer reqBody.Close()
+	body, err := ioutil.ReadAll(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	doc := make(map[string]interface{})
+	err = json.Unmarshal(body, &doc)
+	if err != nil {
+		return nil, err
+	}
+
+	return doc, nil
+}
+
 // Handler ...
 type Handler struct {
 	Name  string
@@ -39,6 +56,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	if strings.HasPrefix(path, "/") { // sometimes url starts from "/"
 		path = path[1:]
+	}
+	if strings.HasSuffix(path, "/") {
+		path = path[:len(path)-1]
 	}
 
 	url := strings.Split(path, "/")
@@ -51,20 +71,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	} else if _, ok := h.Agent.Schema[table]; !ok {
-		sendError(w, "unknown table", http.StatusNotFound)
+		sendError(w, errors.New("unknown table"), http.StatusNotFound)
 		return
 	}
 
 	switch len(url) {
 	case 1:
-		r.ParseForm()
 		if r.Method == http.MethodGet {
+			r.ParseForm()
 			docs, e := h.Agent.GetRows(
 				table, r.Form.Get("limit"),
 				r.Form.Get("offset"),
 			)
 			if e != nil {
-				sendError(w, e.Error(), http.StatusInternalServerError)
+				sendError(w, e, http.StatusInternalServerError)
 				break
 			}
 
@@ -72,15 +92,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"records": docs,
 			})
 		} else if r.Method == http.MethodPut {
-			insertID, e := h.Agent.NewRow(table, r.Form)
-			if e != nil {
-				sendError(w, e.Error(), http.StatusInternalServerError)
+			doc, err := parseBody(r.Body)
+			if err != nil {
+				sendError(w, err, http.StatusBadRequest)
 				break
 			}
 
-			sendAnswer(w, map[string]interface{}{
-				"user_id": insertID,
-			})
+			prKey, insertID, err := h.Agent.NewRow(table, doc)
+			if err != nil {
+				sendError(w, err, http.StatusInternalServerError)
+				break
+			}
+
+			res := make(map[string]interface{}, 1)
+			res[prKey] = insertID
+			sendAnswer(w, res)
 		}
 	case 2:
 		id := url[1]
@@ -89,7 +115,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case http.MethodGet:
 			doc, e := h.Agent.GetRow(table, id)
 			if e != nil {
-				sendError(w, "record not found", http.StatusNotFound)
+				sendError(w, errors.New("record not found"), http.StatusNotFound)
 				break
 			}
 
@@ -97,10 +123,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"record": doc,
 			})
 		case http.MethodPost:
-			r.ParseForm()
-			updateID, e := h.Agent.UpdateRow(table, id, r.Form)
+			doc, err := parseBody(r.Body)
+			if err != nil {
+				sendError(w, err, http.StatusBadRequest)
+				break
+			}
+
+			updateID, e := h.Agent.UpdateRow(table, id, doc)
 			if e != nil {
-				sendError(w, e.Error(), http.StatusInternalServerError)
+				sendError(w, e, http.StatusBadRequest)
 				break
 			}
 
@@ -110,7 +141,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case http.MethodDelete:
 			deleteID, e := h.Agent.DeleteRow(table, id)
 			if e != nil {
-				sendError(w, e.Error(), http.StatusInternalServerError)
+				sendError(w, e, http.StatusInternalServerError)
 				break
 			}
 
@@ -119,7 +150,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	default:
-		sendError(w, "too many endpoints in url", http.StatusBadRequest)
+		sendError(w, errors.New("too many endpoints in url"), http.StatusBadRequest)
 	}
 }
 
