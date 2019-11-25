@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"crud"
 )
 
 func sendError(w http.ResponseWriter, err error, code int) {
@@ -49,7 +51,7 @@ func parseBody(reqBody io.ReadCloser) (map[string]interface{}, error) {
 // Handler ...
 type Handler struct {
 	Name  string
-	Agent DbAgent
+	Agent crud.Agent
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +158,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // NewDbExplorer make handler for hw6 http service
 func NewDbExplorer(db *sql.DB) (http.Handler, error) {
-	agent := DbAgent{db, nil}
+	agent := crud.Agent{db, nil}
 
 	if e := agent.ReadDbSchema(); e != nil {
 		return nil, e
