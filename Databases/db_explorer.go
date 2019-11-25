@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"sort"
 	"strings"
 
 	"crud"
@@ -25,6 +24,7 @@ func sendAnswer(w http.ResponseWriter, content map[string]interface{}) {
 	body, err := json.Marshal(map[string]interface{}{
 		"response": content,
 	})
+	// should change handling
 	if err != nil {
 		panic(err)
 	}
@@ -56,7 +56,8 @@ type Handler struct {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
-	if strings.HasPrefix(path, "/") { // sometimes url starts from "/"
+	// sometimes url starts from "/"
+	if strings.HasPrefix(path, "/") {
 		path = path[1:]
 	}
 	if strings.HasSuffix(path, "/") {
@@ -67,7 +68,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	table := url[0]
 	if table == "" {
 		tables := h.Agent.GetTables()
-		sort.Strings(tables)
+
 		sendAnswer(w, map[string]interface{}{
 			"tables": tables,
 		})
