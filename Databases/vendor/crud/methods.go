@@ -7,21 +7,23 @@ import (
 	"strings"
 )
 
-// GetTables returns tables name list
-func (db *Agent) GetTables() []string {
+// GetTables returns list of table names
+func (db *Agent) GetTables() document {
 	var tables []string
 	for tb := range db.Schema {
 		tables = append(tables, tb)
 	}
 	sort.Strings(tables)
 
-	return tables
+	return document{
+		"tables": tables,
+	}
 }
 
-// GetRows ...
+// GetRows reads from table with constraints
 func (db *Agent) GetRows(
 	table, limit, offset string,
-) ([]map[string]interface{}, error) {
+) (document, error) {
 	if l, err := strconv.Atoi(limit); err != nil || l <= 0 {
 		limit = "5"
 	}
@@ -40,7 +42,7 @@ func (db *Agent) GetRows(
 	defer rows.Close()
 
 	var (
-		result  = []map[string]interface{}{}
+		result  = []document{}
 		columns = db.Schema[table]
 	)
 	for rows.Next() {
@@ -56,7 +58,7 @@ func (db *Agent) GetRows(
 		}
 
 		var (
-			doc = make(map[string]interface{}, len(columns))
+			doc = make(document, len(columns))
 			val interface{}
 		)
 		for i := range vals {
@@ -74,13 +76,15 @@ func (db *Agent) GetRows(
 		result = append(result, doc)
 	}
 
-	return result, nil
+	return document{
+		"records": result,
+	}, nil
 }
 
-// GetRow returns row <id> from table
-func (db *Agent) GetRow(table, id string) (
-	map[string]interface{}, error,
-) {
+// GetRow returns row using <id> from table
+func (db *Agent) GetRow(
+	table, id string,
+) (document, error) {
 	q := fmt.Sprintf(
 		"SELECT * FROM %s WHERE %s = ?",
 		table, getPrimaryKey(db.Schema, table),
@@ -101,7 +105,7 @@ func (db *Agent) GetRow(table, id string) (
 	}
 
 	var (
-		doc = make(map[string]interface{}, len(columns))
+		doc = make(document, len(columns))
 		val interface{}
 	)
 
@@ -118,18 +122,15 @@ func (db *Agent) GetRow(table, id string) (
 		doc[columns[i].name] = val
 	}
 
-	return doc, nil
+	return document{
+		"record": doc,
+	}, nil
 }
 
 // NewRow adds entity to existing table
 func (db *Agent) NewRow(
-	table string, data map[string]interface{},
-) (string, int64, error) {
-	err := db.Validate(table, "CREATE", data)
-	if err != nil {
-		return "", 0, err
-	}
-
+	table string, data document,
+) (document, error) {
 	var (
 		columns = make([]string, len(data))
 		values  = make([]interface{}, len(data))
@@ -150,26 +151,23 @@ func (db *Agent) NewRow(
 	res, err := db.Exec(queryDraft, values...)
 	if err != nil {
 		fmt.Println(err)
-		return "", 0, err
+		return nil, err
 	}
 
 	insertID, err := res.LastInsertId()
 	if err != nil {
-		return "", 0, err
+		return nil, err
 	}
 
-	return getPrimaryKey(db.Schema, table), insertID, nil
+	d := document{}
+	d[getPrimaryKey(db.Schema, table)] = insertID
+	return d, nil
 }
 
-// UpdateRow ...
+// UpdateRow updates row using <id> and valid r.body <doc>
 func (db *Agent) UpdateRow(
-	table, id string, data map[string]interface{},
-) (int64, error) {
-	err := db.Validate(table, "UPDATE", data)
-	if err != nil {
-		return 0, err
-	}
-
+	table, id string, data document,
+) (document, error) {
 	var (
 		valsWithID = make([]interface{}, len(data)+1)
 		pairs      string
@@ -190,31 +188,37 @@ func (db *Agent) UpdateRow(
 	)
 	res, err := db.Exec(query, valsWithID...)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	updateID, err := res.RowsAffected()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	return updateID, nil
+	return document{
+		"updated": updateID,
+	}, nil
 }
 
-// DeleteRow ...
-func (db *Agent) DeleteRow(table, id string) (int64, error) {
+// DeleteRow deletes row using primary key
+func (db *Agent) DeleteRow(
+	table, id string,
+) (document, error) {
 	q := fmt.Sprintf(
 		"DELETE FROM %s WHERE %s = ?",
 		table, getPrimaryKey(db.Schema, table),
 	)
 	res, err := db.Exec(q, id)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	deleteID, err := res.RowsAffected()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	return deleteID, nil
+	return document{
+		"deleted": deleteID,
+	}, nil
 }

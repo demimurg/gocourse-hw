@@ -69,9 +69,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if table == "" {
 		tables := h.Agent.GetTables()
 
-		sendAnswer(w, map[string]interface{}{
-			"tables": tables,
-		})
+		sendAnswer(w, tables)
 		return
 	} else if _, ok := h.Agent.Schema[table]; !ok {
 		sendError(w, errors.New("unknown table"), http.StatusNotFound)
@@ -82,7 +80,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case 1:
 		if r.Method == http.MethodGet {
 			r.ParseForm()
-			docs, e := h.Agent.GetRows(
+			records, e := h.Agent.GetRows(
 				table, r.Form.Get("limit"),
 				r.Form.Get("offset"),
 			)
@@ -91,66 +89,68 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 
-			sendAnswer(w, map[string]interface{}{
-				"records": docs,
-			})
+			sendAnswer(w, records)
 		} else if r.Method == http.MethodPut {
-			doc, err := parseBody(r.Body)
+			body, err := parseBody(r.Body)
 			if err != nil {
 				sendError(w, err, http.StatusBadRequest)
 				break
 			}
 
-			prKey, insertID, err := h.Agent.NewRow(table, doc)
+			doc, err := h.Agent.Validate(table, "CREATE", body)
+			if err != nil {
+				sendError(w, err, http.StatusBadRequest)
+				break
+			}
+
+			primaryKey, err := h.Agent.NewRow(table, doc)
 			if err != nil {
 				sendError(w, err, http.StatusInternalServerError)
 				break
 			}
 
-			res := make(map[string]interface{}, 1)
-			res[prKey] = insertID
-			sendAnswer(w, res)
+			sendAnswer(w, primaryKey)
 		}
 	case 2:
 		id := url[1]
 
 		switch r.Method {
 		case http.MethodGet:
-			doc, e := h.Agent.GetRow(table, id)
+			record, e := h.Agent.GetRow(table, id)
 			if e != nil {
 				sendError(w, errors.New("record not found"), http.StatusNotFound)
 				break
 			}
 
-			sendAnswer(w, map[string]interface{}{
-				"record": doc,
-			})
+			sendAnswer(w, record)
 		case http.MethodPost:
-			doc, err := parseBody(r.Body)
+			body, err := parseBody(r.Body)
 			if err != nil {
 				sendError(w, err, http.StatusBadRequest)
 				break
 			}
 
-			updateID, e := h.Agent.UpdateRow(table, id, doc)
+			doc, err := h.Agent.Validate(table, "UPDATE", body)
+			if err != nil {
+				sendError(w, err, http.StatusBadRequest)
+				break
+			}
+
+			updated, e := h.Agent.UpdateRow(table, id, doc)
 			if e != nil {
 				sendError(w, e, http.StatusBadRequest)
 				break
 			}
 
-			sendAnswer(w, map[string]interface{}{
-				"updated": updateID,
-			})
+			sendAnswer(w, updated)
 		case http.MethodDelete:
-			deleteID, e := h.Agent.DeleteRow(table, id)
+			deleted, e := h.Agent.DeleteRow(table, id)
 			if e != nil {
 				sendError(w, e, http.StatusInternalServerError)
 				break
 			}
 
-			sendAnswer(w, map[string]interface{}{
-				"deleted": deleteID,
-			})
+			sendAnswer(w, deleted)
 		}
 	default:
 		sendError(w, errors.New("too many endpoints in url"), http.StatusBadRequest)

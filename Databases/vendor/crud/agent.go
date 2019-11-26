@@ -36,18 +36,17 @@ func (e validationErr) Error() string {
 	)
 }
 
+type document map[string]interface{}
+
 // Validate ...
 func (db *Agent) Validate(
 	table, method string, data map[string]interface{},
-) error {
-	// waiting for refactor...
-	// !!!HARDCODE!!!
+) (document, error) {
 	prKey := getPrimaryKey(db.Schema, table)
 	_, havePrimaryKey := data[prKey]
 	if havePrimaryKey && method == "UPDATE" {
-		return validationErr{prKey}
+		return nil, validationErr{prKey}
 	}
-	// !!!HARDCODE!!!
 
 	for _, col := range db.Schema[table][1:] {
 		_, inReq := data[col.name]
@@ -83,7 +82,7 @@ func (db *Agent) Validate(
 		}
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -101,7 +100,7 @@ func (db *Agent) Validate(
 		}
 	}
 
-	return nil
+	return document(data), nil
 }
 
 // ReadDbSchema saves tables/columns meta to the receiver
