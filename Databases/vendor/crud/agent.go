@@ -38,7 +38,9 @@ func (e validationErr) Error() string {
 
 type document map[string]interface{}
 
-// Validate ...
+// Validate checks r.body from PUT and POST
+// returns error if primary key in "update" body
+// uses type <document> to be sure that crud methods have valid data
 func (db *Agent) Validate(
 	table, method string, data map[string]interface{},
 ) (document, error) {

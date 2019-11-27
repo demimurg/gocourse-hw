@@ -24,9 +24,13 @@ func sendAnswer(w http.ResponseWriter, content map[string]interface{}) {
 	body, err := json.Marshal(map[string]interface{}{
 		"response": content,
 	})
-	// should change handling
+
 	if err != nil {
-		panic(err)
+		sendError(
+			w, errors.New("can't jsonify service answer"),
+			http.StatusInternalServerError,
+		)
+		return
 	}
 
 	w.Write(body)
@@ -48,7 +52,7 @@ func parseBody(reqBody io.ReadCloser) (map[string]interface{}, error) {
 	return doc, nil
 }
 
-// Handler ...
+// Handler wrap crud.Agent, uses for routing
 type Handler struct {
 	Name  string
 	Agent crud.Agent
@@ -64,96 +68,109 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		path = path[:len(path)-1]
 	}
 
-	url := strings.Split(path, "/")
-	table := url[0]
-	if table == "" {
-		tables := h.Agent.GetTables()
+	var (
+		url       = strings.Split(path, "/")
+		table, id string
+	)
+	table = url[0]
+	if len(url) > 1 {
+		id = url[1]
+	}
 
-		sendAnswer(w, tables)
-		return
-	} else if _, ok := h.Agent.Schema[table]; !ok {
+	if _, ok := h.Agent.Schema[table]; !ok && table != "" {
 		sendError(w, errors.New("unknown table"), http.StatusNotFound)
 		return
 	}
 
-	switch len(url) {
-	case 1:
-		if r.Method == http.MethodGet {
-			r.ParseForm()
-			records, e := h.Agent.GetRows(
-				table, r.Form.Get("limit"),
-				r.Form.Get("offset"),
-			)
-			if e != nil {
-				sendError(w, e, http.StatusInternalServerError)
-				break
-			}
+	switch {
 
-			sendAnswer(w, records)
-		} else if r.Method == http.MethodPut {
-			body, err := parseBody(r.Body)
-			if err != nil {
-				sendError(w, err, http.StatusBadRequest)
-				break
-			}
+	// [GET "/"] get list of table names
+	case r.Method == http.MethodGet && table == "":
+		tables := h.Agent.GetTables()
 
-			doc, err := h.Agent.Validate(table, "CREATE", body)
-			if err != nil {
-				sendError(w, err, http.StatusBadRequest)
-				break
-			}
+		sendAnswer(w, tables)
 
-			primaryKey, err := h.Agent.NewRow(table, doc)
-			if err != nil {
-				sendError(w, err, http.StatusInternalServerError)
-				break
-			}
+	// [GET "/<table>"] get rows from the table
+	case r.Method == http.MethodGet && len(url) == 1:
+		r.ParseForm()
 
-			sendAnswer(w, primaryKey)
+		records, e := h.Agent.GetRows(
+			table, r.Form.Get("limit"),
+			r.Form.Get("offset"),
+		)
+		if e != nil {
+			sendError(w, e, http.StatusInternalServerError)
+			break
 		}
-	case 2:
-		id := url[1]
 
-		switch r.Method {
-		case http.MethodGet:
-			record, e := h.Agent.GetRow(table, id)
-			if e != nil {
-				sendError(w, errors.New("record not found"), http.StatusNotFound)
-				break
-			}
+		sendAnswer(w, records)
 
-			sendAnswer(w, record)
-		case http.MethodPost:
-			body, err := parseBody(r.Body)
-			if err != nil {
-				sendError(w, err, http.StatusBadRequest)
-				break
-			}
-
-			doc, err := h.Agent.Validate(table, "UPDATE", body)
-			if err != nil {
-				sendError(w, err, http.StatusBadRequest)
-				break
-			}
-
-			updated, e := h.Agent.UpdateRow(table, id, doc)
-			if e != nil {
-				sendError(w, e, http.StatusBadRequest)
-				break
-			}
-
-			sendAnswer(w, updated)
-		case http.MethodDelete:
-			deleted, e := h.Agent.DeleteRow(table, id)
-			if e != nil {
-				sendError(w, e, http.StatusInternalServerError)
-				break
-			}
-
-			sendAnswer(w, deleted)
+	// [PUT "/<table>"] create a new row in the table
+	case r.Method == http.MethodPut && len(url) == 1:
+		body, err := parseBody(r.Body)
+		if err != nil {
+			sendError(w, err, http.StatusBadRequest)
+			break
 		}
+
+		doc, err := h.Agent.Validate(table, "CREATE", body)
+		if err != nil {
+			sendError(w, err, http.StatusBadRequest)
+			break
+		}
+
+		primaryKey, err := h.Agent.NewRow(table, doc)
+		if err != nil {
+			sendError(w, err, http.StatusInternalServerError)
+			break
+		}
+
+		sendAnswer(w, primaryKey)
+
+	// [GET "/<table>/<id>"] get the row by id
+	case r.Method == http.MethodGet && len(url) == 2:
+		record, e := h.Agent.GetRow(table, id)
+		if e != nil {
+			sendError(w, errors.New("record not found"), http.StatusNotFound)
+			break
+		}
+
+		sendAnswer(w, record)
+
+	// [POST "/<table>/<id>"] update the row by id
+	case r.Method == http.MethodPost && len(url) == 2:
+		body, err := parseBody(r.Body)
+		if err != nil {
+			sendError(w, err, http.StatusBadRequest)
+			break
+		}
+
+		doc, err := h.Agent.Validate(table, "UPDATE", body)
+		if err != nil {
+			sendError(w, err, http.StatusBadRequest)
+			break
+		}
+
+		updated, e := h.Agent.UpdateRow(table, id, doc)
+		if e != nil {
+			sendError(w, e, http.StatusBadRequest)
+			break
+		}
+
+		sendAnswer(w, updated)
+
+	// [DELETE "/<table>/<id>"]	delete the row from table
+	case r.Method == http.MethodDelete && len(url) == 2:
+		deleted, e := h.Agent.DeleteRow(table, id)
+		if e != nil {
+			sendError(w, e, http.StatusInternalServerError)
+			break
+		}
+
+		sendAnswer(w, deleted)
+
 	default:
-		sendError(w, errors.New("too many endpoints in url"), http.StatusBadRequest)
+		sendError(w, errors.New("uses wrong api"), http.StatusBadRequest)
 	}
 }
 
