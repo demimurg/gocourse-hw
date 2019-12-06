@@ -1,11 +1,18 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"sort"
 	"strings"
+)
+
+var (
+	path       = flag.String("p", ".", "the path for the program")
+	printFiles = flag.Bool("f", true, "do you need to print files?")
 )
 
 var interfaceElements = map[string]string{
@@ -85,14 +92,10 @@ func dirTree(out io.Writer, path string, needFiles bool) error {
 }
 
 func main() {
-	out := os.Stdout
-	if !(len(os.Args) == 2 || len(os.Args) == 3) {
-		panic("usage go run main.go . [-f]")
-	}
-	path := os.Args[1]
-	printFiles := len(os.Args) == 3 && os.Args[2] == "-f"
-	err := dirTree(out, path, printFiles)
+	flag.Parse()
+
+	err := dirTree(os.Stdout, *path, *printFiles)
 	if err != nil {
-		panic(err.Error())
+		log.Fatal(err)
 	}
 }
