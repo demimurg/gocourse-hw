@@ -7,7 +7,7 @@ syntax = "proto3";
 // полученный код при загрузки в автогрейдер надо будет положить в service.go
 // на время тестов можно ничего не делать
 
-package main;
+package proto;
 
 message Event {
     int64  timestamp = 1;

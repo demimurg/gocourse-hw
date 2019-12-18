@@ -14,6 +14,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+
+	. "github.com/madmaxeatfax/homeworks/Microservices/proto"
 )
 
 const (
@@ -22,10 +24,10 @@ const (
 
 	// кого по каким методам пускать
 	ACLData string = `{
-	"logger":    ["/main.Admin/Logging"],
-	"stat":      ["/main.Admin/Statistics"],
-	"biz_user":  ["/main.Biz/Check", "/main.Biz/Add"],
-	"biz_admin": ["/main.Biz/*"]
+	"logger":    ["/proto.Admin/Logging"],
+	"stat":      ["/proto.Admin/Statistics"],
+	"biz_user":  ["/proto.Biz/Check", "/proto.Biz/Add"],
+	"biz_admin": ["/proto.Biz/*"]
 }`
 )
 

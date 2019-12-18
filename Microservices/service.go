@@ -7,6 +7,10 @@ import (
 	"net"
 
 	"google.golang.org/grpc"
+
+	"github.com/madmaxeatfax/homeworks/Microservices/midware"
+	"github.com/madmaxeatfax/homeworks/Microservices/proto"
+	"github.com/madmaxeatfax/homeworks/Microservices/servers"
 )
 
 // StartMyMicroservice ...
@@ -22,27 +26,30 @@ func StartMyMicroservice(
 		)
 	}
 
-	m, err := NewMiddleware(ACLdata)
+	m, err := midware.New(ACLdata)
 	if err != nil {
 		lis.Close()
 		return err
 	}
 
-	server := grpc.NewServer(
+	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(m.UnaryRPC),
 		grpc.StreamInterceptor(m.Stream),
 	)
 
-	RegisterBizServer(server, NewBizServer())
-	RegisterAdminServer(server, NewAdminServer(m.sessions))
+	proto.RegisterBizServer(grpcServer, servers.NewBiz())
+	proto.RegisterAdminServer(
+		grpcServer,
+		servers.NewAdmin(m.GetSess()),
+	)
 
 	go func() {
 		<-ctx.Done()
-		server.GracefulStop()
+		grpcServer.GracefulStop()
 	}()
 
 	go func() {
-		if err := server.Serve(lis); err != nil {
+		if err := grpcServer.Serve(lis); err != nil {
 			log.Fatalln("failed to serve: ", err)
 		}
 	}()
