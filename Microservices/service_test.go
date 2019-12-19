@@ -256,15 +256,15 @@ func TestLogging(t *testing.T) {
 	wg.Wait()
 
 	expectedLogData1 := []*Event{
-		{Timestamp: 0, Consumer: "logger", Method: "/main.Admin/Logging", Host: ""},
-		{Timestamp: 0, Consumer: "biz_user", Method: "/main.Biz/Check", Host: ""},
-		{Timestamp: 0, Consumer: "biz_admin", Method: "/main.Biz/Check", Host: ""},
-		{Timestamp: 0, Consumer: "biz_admin", Method: "/main.Biz/Test", Host: ""},
+		{Timestamp: 0, Consumer: "logger", Method: "/proto.Admin/Logging", Host: ""},
+		{Timestamp: 0, Consumer: "biz_user", Method: "/proto.Biz/Check", Host: ""},
+		{Timestamp: 0, Consumer: "biz_admin", Method: "/proto.Biz/Check", Host: ""},
+		{Timestamp: 0, Consumer: "biz_admin", Method: "/proto.Biz/Test", Host: ""},
 	}
 	expectedLogData2 := []*Event{
-		{Timestamp: 0, Consumer: "biz_user", Method: "/main.Biz/Check", Host: ""},
-		{Timestamp: 0, Consumer: "biz_admin", Method: "/main.Biz/Check", Host: ""},
-		{Timestamp: 0, Consumer: "biz_admin", Method: "/main.Biz/Test", Host: ""},
+		{Timestamp: 0, Consumer: "biz_user", Method: "/proto.Biz/Check", Host: ""},
+		{Timestamp: 0, Consumer: "biz_admin", Method: "/proto.Biz/Check", Host: ""},
+		{Timestamp: 0, Consumer: "biz_admin", Method: "/proto.Biz/Test", Host: ""},
 	}
 
 	if !reflect.DeepEqual(logData1, expectedLogData1) {
