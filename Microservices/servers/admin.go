@@ -1,29 +1,36 @@
 package servers
 
 import (
+	"sync"
+
 	"github.com/madmaxeatfax/homeworks/Microservices/proto"
 )
 
 type admin struct {
-	sessions []*proto.Event
+	sync.Mutex
+
+	logRecievers *[]chan *proto.Event
 }
 
-// CONFIG TYPE???
+// NEW CONFIG TYPE???
 
-func NewAdmin(events []*proto.Event) proto.AdminServer {
-	return &admin{events}
+func  NewAdmin(logs *[]chan *proto.Event) proto.AdminServer {
+	return &admin{logRecievers: logs}
 }
 
 func (a *admin) Logging(req *proto.Nothing, srv proto.Admin_LoggingServer) error {
-	// i := srv.Context().Value("track-from").(int)
-	// tracked := a.sessions[i:]
+	ch := make(chan *proto.Event)
 
-	// for _, ses := range tracked {
-	// 	if err := srv.Send(ses); err != nil {
-	// 		return err
-	// 	}
-	// }
-	srv.Send(&proto.Event{})
+	a.Lock()
+	*a.logRecievers = append(*a.logRecievers, ch)
+	a.Unlock()
+
+	for event := range ch {
+		if err := srv.Send(event); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

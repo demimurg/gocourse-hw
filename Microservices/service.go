@@ -26,32 +26,34 @@ func StartMyMicroservice(
 		)
 	}
 
-	m, err := midware.New(ACLdata)
+	mware, err := midware.New(ACLdata)
 	if err != nil {
 		lis.Close()
 		return err
 	}
 
-	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(m.UnaryRPC),
-		grpc.StreamInterceptor(m.Stream),
+	grpcS := grpc.NewServer(
+		grpc.UnaryInterceptor(mware.UnaryRPC),
+		grpc.StreamInterceptor(mware.Stream),
 	)
 
-	proto.RegisterBizServer(grpcServer, servers.NewBiz())
+	proto.RegisterBizServer(grpcS, servers.NewBiz())
 	proto.RegisterAdminServer(
-		grpcServer,
-		servers.NewAdmin(m.GetSess()),
+		grpcS, servers.NewAdmin(mware.LogWaitersList()),
 	)
+
+	go mware.StartLogger()
 
 	go func() {
-		<-ctx.Done()
-		grpcServer.GracefulStop()
+		if err := grpcS.Serve(lis); err != nil {
+			log.Fatalln("failed to serve: ", err)
+		}
 	}()
 
 	go func() {
-		if err := grpcServer.Serve(lis); err != nil {
-			log.Fatalln("failed to serve: ", err)
-		}
+		<-ctx.Done()
+		mware.StopLogger()
+		grpcS.GracefulStop()
 	}()
 
 	return nil
