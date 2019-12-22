@@ -18,7 +18,7 @@ func StartMyMicroservice(
 	ctx context.Context,
 	socket, ACLdata string,
 ) error {
-	lis, err := net.Listen("tcp", socket)
+	listener, err := net.Listen("tcp", socket)
 	if err != nil {
 		return fmt.Errorf(
 			"Problem with listener:\nsocket: %s, error: %s",
@@ -28,7 +28,7 @@ func StartMyMicroservice(
 
 	mware, err := midware.New(ACLdata)
 	if err != nil {
-		lis.Close()
+		listener.Close()
 		return err
 	}
 
@@ -39,20 +39,18 @@ func StartMyMicroservice(
 
 	proto.RegisterBizServer(grpcS, servers.NewBiz())
 	proto.RegisterAdminServer(
-		grpcS, servers.NewAdmin(mware.LogWaitersList()),
+		grpcS, servers.NewAdmin(mware.Logger()),
 	)
 
-	go mware.StartLogger()
-
 	go func() {
-		if err := grpcS.Serve(lis); err != nil {
+		if err := grpcS.Serve(listener); err != nil {
 			log.Fatalln("failed to serve: ", err)
 		}
 	}()
 
 	go func() {
 		<-ctx.Done()
-		mware.StopLogger()
+		mware.Close()
 		grpcS.GracefulStop()
 	}()
 
