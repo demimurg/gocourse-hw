@@ -48,7 +48,7 @@ func (m *middleware) Stream(
 
 func (m *middleware) interceptor(consumer, method string) error {
 	for _, f := range []step{
-		m.checkACL, m.addLog,
+		m.checkACL, m.pushEvent,
 	} {
 		if err := f(consumer, method); err != nil {
 			return err
@@ -95,13 +95,19 @@ func (m *middleware) checkACL(consumer, method string) error {
 	return nil
 }
 
-func (m *middleware) addLog(consumer, method string) error {
-
-	m.logChan <- &proto.Event{
+func (m *middleware) pushEvent(consumer, method string) error {
+	event := &proto.Event{
 		Consumer: consumer,
 		Method:   method,
 		Host:     "127.0.0.1:",
 	}
+
+	// shouldn't lock for sending event, only for reading waiters
+	m.log.Lock()
+	for _, waiter := range m.log.Tunnels {
+		waiter <- event
+	}
+	m.log.Unlock()
 
 	return nil
 }

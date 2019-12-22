@@ -1,32 +1,31 @@
 package servers
 
 import (
-	"sync"
-
+	"github.com/madmaxeatfax/homeworks/Microservices/midware"
 	"github.com/madmaxeatfax/homeworks/Microservices/proto"
 )
 
 type admin struct {
-	sync.Mutex
-
-	logRecievers *[]chan *proto.Event
+	log *midware.Logger
 }
 
 // NEW CONFIG TYPE???
 
-func  NewAdmin(logs *[]chan *proto.Event) proto.AdminServer {
-	return &admin{logRecievers: logs}
+func NewAdmin(logger *midware.Logger) proto.AdminServer {
+	return &admin{logger}
 }
 
 func (a *admin) Logging(req *proto.Nothing, srv proto.Admin_LoggingServer) error {
 	ch := make(chan *proto.Event)
+	logger := a.log
 
-	a.Lock()
-	*a.logRecievers = append(*a.logRecievers, ch)
-	a.Unlock()
+	logger.RLock()
+	logger.Tunnels = append(logger.Tunnels, ch)
+	logger.RUnlock()
 
 	for event := range ch {
 		if err := srv.Send(event); err != nil {
+			// you should remove the chan from the tunnels
 			return err
 		}
 	}

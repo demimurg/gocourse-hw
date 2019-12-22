@@ -7,12 +7,14 @@ import (
 	"github.com/madmaxeatfax/homeworks/Microservices/proto"
 )
 
-type middleware struct {
+type Logger struct {
 	sync.RWMutex
-	acl map[string][]string // map{consumer: [method1, method2...]}
+	Tunnels []chan *proto.Event
+}
 
-	logChan    chan *proto.Event
-	logWaiters []chan *proto.Event
+type middleware struct {
+	acl map[string][]string // map{consumer: [method1, method2...]}
+	log Logger
 }
 
 func New(ACLdata string) (*middleware, error) {
@@ -24,8 +26,18 @@ func New(ACLdata string) (*middleware, error) {
 		return nil, err
 	}
 
-	m.logChan = make(chan *proto.Event) // !!!buffer!!!
-	m.logWaiters = make([]chan *proto.Event, 0)
+	m.log.Tunnels = make([]chan *proto.Event, 0)
 
 	return &m, nil
+}
+
+func (m *middleware) Logger() *Logger {
+	return &m.log
+}
+
+func (m *middleware) Close() {
+	for _, waiter := range m.log.Tunnels {
+		close(waiter)
+	}
+	m.log.Tunnels = m.log.Tunnels[:0] //empty slice
 }
