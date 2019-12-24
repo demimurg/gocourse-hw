@@ -104,7 +104,7 @@ func (m *middleware) pushEvent(consumer, method string) error {
 
 	// shouldn't lock for sending event, only for reading waiters
 	m.log.Lock()
-	for _, waiter := range m.log.Tunnels {
+	for waiter := range m.log.Tunnels {
 		waiter <- event
 	}
 	m.log.Unlock()

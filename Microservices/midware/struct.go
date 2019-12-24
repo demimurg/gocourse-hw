@@ -7,9 +7,12 @@ import (
 	"github.com/madmaxeatfax/homeworks/Microservices/proto"
 )
 
+// easy to add, read and delete channel (uses only keys)
+type tunnels map[chan *proto.Event]bool
+
 type Logger struct {
 	sync.RWMutex
-	Tunnels []chan *proto.Event
+	Tunnels tunnels
 }
 
 type middleware struct {
@@ -26,7 +29,7 @@ func New(ACLdata string) (*middleware, error) {
 		return nil, err
 	}
 
-	m.log.Tunnels = make([]chan *proto.Event, 0)
+	m.log.Tunnels = make(tunnels, 0)
 
 	return &m, nil
 }
@@ -36,8 +39,8 @@ func (m *middleware) Logger() *Logger {
 }
 
 func (m *middleware) Close() {
-	for _, waiter := range m.log.Tunnels {
+	for waiter := range m.log.Tunnels {
 		close(waiter)
 	}
-	m.log.Tunnels = m.log.Tunnels[:0] //empty slice
+	m.log.Tunnels = make(tunnels, 0) // to empty
 }

@@ -9,23 +9,20 @@ type admin struct {
 	log *midware.Logger
 }
 
-// NEW CONFIG TYPE???
-
 func NewAdmin(logger *midware.Logger) proto.AdminServer {
 	return &admin{logger}
 }
 
 func (a *admin) Logging(req *proto.Nothing, srv proto.Admin_LoggingServer) error {
 	ch := make(chan *proto.Event)
-	logger := a.log
 
-	logger.RLock()
-	logger.Tunnels = append(logger.Tunnels, ch)
-	logger.RUnlock()
+	a.log.RLock()
+	a.log.Tunnels[ch] = true
+	a.log.RUnlock()
 
 	for event := range ch {
 		if err := srv.Send(event); err != nil {
-			// you should remove the chan from the tunnels
+			delete(a.log.Tunnels, ch)
 			return err
 		}
 	}
