@@ -2,15 +2,30 @@ package midware
 
 import (
 	"context"
-	"strings"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
-
-	"github.com/madmaxeatfax/homeworks/Microservices/proto"
 )
+
+type handlerF func(consumer, method string) error
+
+func (m *middleware) interceptor(ctx context.Context, method string) error {
+	var consumer string
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok && len(md.Get("consumer")) > 0 {
+		consumer = md.Get("consumer")[0]
+	}
+
+	for _, f := range []handlerF{
+		m.acl.check, m.log.share,
+	} {
+		if err := f(consumer, method); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
 
 func (m *middleware) UnaryRPC(
 	ctx context.Context,
@@ -18,12 +33,7 @@ func (m *middleware) UnaryRPC(
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
 ) (interface{}, error) {
-	var (
-		consumer = getConsumer(ctx)
-		method   = info.FullMethod
-	)
-
-	if e := m.interceptor(consumer, method); e != nil {
+	if e := m.interceptor(ctx, info.FullMethod); e != nil {
 		return nil, e
 	}
 
@@ -34,90 +44,9 @@ func (m *middleware) Stream(
 	srv interface{}, ss grpc.ServerStream,
 	info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 ) error {
-	var (
-		consumer = getConsumer(ss.Context())
-		method   = info.FullMethod
-	)
-
-	if e := m.interceptor(consumer, method); e != nil {
+	if e := m.interceptor(ss.Context(), info.FullMethod); e != nil {
 		return e
 	}
 
 	return handler(srv, ss)
-}
-
-func (m *middleware) interceptor(consumer, method string) error {
-	for _, f := range []step{
-		m.checkACL, m.pushEvent,
-	} {
-		if err := f(consumer, method); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// it would be better to rename
-type step func(consumer, method string) error
-
-func (m *middleware) checkACL(consumer, method string) error {
-	var (
-		found   bool
-		methods []string
-	)
-	for con, meths := range m.acl {
-		if con == consumer {
-			found = true
-			methods = meths
-			break
-		}
-	}
-	if !found {
-		return status.Errorf(
-			codes.Unauthenticated, "consumer doesn't exist",
-		)
-	}
-
-	var granted bool
-	for _, m := range methods {
-		if strings.HasSuffix(m, "*") || m == method {
-			granted = true
-			break
-		}
-	}
-	if !granted {
-		return status.Errorf(
-			codes.Unauthenticated, "disallowed method",
-		)
-	}
-
-	return nil
-}
-
-func (m *middleware) pushEvent(consumer, method string) error {
-	event := &proto.Event{
-		Consumer: consumer,
-		Method:   method,
-		Host:     "127.0.0.1:",
-	}
-
-	// shouldn't lock for sending event, only for reading waiters
-	m.log.Lock()
-	for waiter := range m.log.Tunnels {
-		waiter <- event
-	}
-	m.log.Unlock()
-
-	return nil
-}
-
-func getConsumer(ctx context.Context) string {
-	var consumer string
-	md, ok := metadata.FromIncomingContext(ctx)
-	if ok && len(md.Get("consumer")) > 0 {
-		consumer = md.Get("consumer")[0]
-	}
-
-	return consumer
 }

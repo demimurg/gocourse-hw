@@ -1,28 +1,32 @@
 package servers
 
 import (
+	"time"
+
 	"github.com/madmaxeatfax/homeworks/Microservices/midware"
 	"github.com/madmaxeatfax/homeworks/Microservices/proto"
 )
 
-type admin struct {
-	log *midware.Logger
+func NewAdmin(log midware.Logger) proto.AdminServer {
+	return &admin{log}
 }
 
-func NewAdmin(logger *midware.Logger) proto.AdminServer {
-	return &admin{logger}
+type admin struct {
+	log midware.Logger
 }
 
 func (a *admin) Logging(req *proto.Nothing, srv proto.Admin_LoggingServer) error {
-	ch := make(chan *proto.Event)
+	var (
+		logCh = a.log.NewTunnel()
+		event = proto.Event{Host: "127.0.0.1:"}
+	)
 
-	a.log.RLock()
-	a.log.Tunnels[ch] = true
-	a.log.RUnlock()
+	for recieved := range logCh {
+		event.Consumer = recieved.Consumer
+		event.Method = recieved.Method
 
-	for event := range ch {
-		if err := srv.Send(event); err != nil {
-			delete(a.log.Tunnels, ch)
+		if err := srv.Send(&event); err != nil {
+			a.log.DeleteTunnel(logCh)
 			return err
 		}
 	}
@@ -30,7 +34,46 @@ func (a *admin) Logging(req *proto.Nothing, srv proto.Admin_LoggingServer) error
 	return nil
 }
 
-func (*admin) Statistics(req *proto.StatInterval, srv proto.Admin_StatisticsServer) error {
-	srv.Send(&proto.Stat{})
-	return nil
+func (a *admin) Statistics(req *proto.StatInterval, srv proto.Admin_StatisticsServer) error {
+	var (
+		logCh  = a.log.NewTunnel()
+		ticker = time.NewTicker(
+			time.Duration(req.IntervalSeconds) * time.Second,
+		)
+
+		statistics = proto.Stat{
+			ByConsumer: make(map[string]uint64, 0),
+			ByMethod:   make(map[string]uint64, 0),
+		}
+
+		increment = func(stat map[string]uint64, key string) {
+			if _, ok := stat[key]; !ok {
+				stat[key] = 0
+			}
+			stat[key]++
+		}
+		clear = func(stat *map[string]uint64) {
+			*stat = make(map[string]uint64, 0)
+		}
+	)
+
+	defer ticker.Stop()
+
+	for {
+		select {
+		case recieved, ok := <-logCh:
+			if !ok {
+				return nil
+			}
+			increment(statistics.ByConsumer, recieved.Consumer)
+			increment(statistics.ByMethod, recieved.Method)
+		case <-ticker.C:
+			if err := srv.Send(&statistics); err != nil {
+				a.log.DeleteTunnel(logCh)
+				return err
+			}
+			clear(&statistics.ByConsumer)
+			clear(&statistics.ByMethod)
+		}
+	}
 }

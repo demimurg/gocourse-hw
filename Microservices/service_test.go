@@ -347,10 +347,10 @@ func TestStat(t *testing.T) {
 	expectedStat1 := &Stat{
 		Timestamp: 0,
 		ByMethod: map[string]uint64{
-			"/main.Biz/Check":        1,
-			"/main.Biz/Add":          1,
-			"/main.Biz/Test":         1,
-			"/main.Admin/Statistics": 1,
+			"/proto.Biz/Check":        1,
+			"/proto.Biz/Add":          1,
+			"/proto.Biz/Test":         1,
+			"/proto.Admin/Statistics": 1,
 		},
 		ByConsumer: map[string]uint64{
 			"biz_user":  2,
@@ -372,7 +372,7 @@ func TestStat(t *testing.T) {
 	expectedStat1 = &Stat{
 		Timestamp: 0,
 		ByMethod: map[string]uint64{
-			"/main.Biz/Add": 1,
+			"/proto.Biz/Add": 1,
 		},
 		ByConsumer: map[string]uint64{
 			"biz_admin": 1,
@@ -381,9 +381,9 @@ func TestStat(t *testing.T) {
 	expectedStat2 := &Stat{
 		Timestamp: 0,
 		ByMethod: map[string]uint64{
-			"/main.Biz/Check": 1,
-			"/main.Biz/Add":   2,
-			"/main.Biz/Test":  1,
+			"/proto.Biz/Check": 1,
+			"/proto.Biz/Add":   2,
+			"/proto.Biz/Test":  1,
 		},
 		ByConsumer: map[string]uint64{
 			"biz_user":  2,

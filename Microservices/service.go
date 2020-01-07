@@ -39,7 +39,7 @@ func StartMyMicroservice(
 
 	proto.RegisterBizServer(grpcS, servers.NewBiz())
 	proto.RegisterAdminServer(
-		grpcS, servers.NewAdmin(mware.Logger()),
+		grpcS, servers.NewAdmin(mware.CreateLogger()),
 	)
 
 	go func() {
@@ -50,7 +50,7 @@ func StartMyMicroservice(
 
 	go func() {
 		<-ctx.Done()
-		mware.Close()
+		mware.CloseLogger()
 		grpcS.GracefulStop()
 	}()
 
